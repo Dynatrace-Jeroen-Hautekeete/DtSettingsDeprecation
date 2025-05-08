@@ -19,6 +19,7 @@ pip install -r requirements.txt
 export DT_URL=https://{tenant-id}.live.dynatrace.com (or https://{mycluster}/e/{environment-uuid})  
 export DT_TOKEN=dt0c01.###.######  
 (optional, default=200) export SINCE={num-days}  
+(optional, default="No") export CLEAN=Y (or y, YES, Yes, yes, 1, TRUE, True, true)  
   
 cd src  
 python deprecator.py  

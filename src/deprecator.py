@@ -6,6 +6,7 @@ from dynatrace import TOO_MANY_REQUESTS_WAIT
 dt_url=os.getenv("DT_URL")
 dt_token=os.getenv("DT_TOKEN")
 since=int(os.getenv("SINCE","200"))
+clean=os.getenv("CLEAN","No")
 
 dtapi = Dynatrace(dt_url,dt_token, retries=3, retry_delay_ms=1000, too_many_requests_strategy=TOO_MANY_REQUESTS_WAIT,headers={"X-Dynatrace-Script":"SettingsDeprecator"})
 
@@ -52,7 +53,7 @@ def deprecateSettings():
                             removal = True                        
                 else:
                     unsuptypes.add(curtype)
-                if removal:
+                if removal and clean in ["1","Y","y","YES","Yes","yes","TRUE","True","true"]:
                     dtapi.settings.delete_object(sobject.object_id)
     
     print(f"Unsupported types: {unsuptypes}")        
