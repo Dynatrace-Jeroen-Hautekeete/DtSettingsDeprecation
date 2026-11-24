@@ -25,10 +25,10 @@ The list is defined in `SUPPORTED_ENTITY_TYPES` in [src/deprecator.py](src/depre
 
 | Variable   | Required | Default | Description |
 |------------|----------|---------|-------------|
-| `DT_URL`   | yes      | -       | Dynatrace environment URL. |
+| `DT_URL`   | yes      | -       | Dynatrace environment URL. Must start with `http://` or `https://`. |
 | `DT_TOKEN` | yes      | -       | API token with permission to read and write settings and read entities. |
-| `SINCE`    | no       | `200`   | Number of days since an entity was last seen after which its settings are considered stale. |
-| `CLEAN`    | no       | `No`    | Set to `1`, `Y`, `YES` or `TRUE` (any of the spellings `Y/y`, `Yes/YES/yes`, `True/TRUE/true`) to actually delete. Anything else is a dry run. |
+| `SINCE`    | no       | `200`   | Whole number of days (>= 1) since an entity was last seen after which its settings are considered stale. |
+| `CLEAN`    | no       | `No`    | Set to `1`, `y`, `yes` or `true` (case-insensitive) to actually delete. Anything else is a dry run; unrecognised values print a warning. The mode is printed at the start of the run. |
 
 ## Usage
 
@@ -41,6 +41,8 @@ python src/deprecator.py
 # Delete stale settings
 CLEAN=Yes python src/deprecator.py
 ```
+
+Invalid or missing `DT_URL`, `DT_TOKEN` or `SINCE` are all reported up front and the script exits with code 2 before contacting Dynatrace.
 
 On PowerShell use `$env:CLEAN = "Yes"` before running.
 
