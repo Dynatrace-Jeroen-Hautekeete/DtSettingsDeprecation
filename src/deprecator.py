@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import os
+import re
 from dynatrace import Dynatrace
 from dynatrace import TOO_MANY_REQUESTS_WAIT
 
@@ -22,6 +23,17 @@ suptypes = [
     "DISK"
 ]
 unsuptypes = set()
+
+
+def is_not_found(exc: Exception) -> bool:
+    """Return True only if the dynatrace client reported an HTTP 404.
+
+    The client raises a bare Exception formatted as
+    "Error making request to <url>: <Response [404]>. Response: <body>",
+    so match the status in that exact position and ignore the response body.
+    """
+    msg = exc.args[0] if exc.args and isinstance(exc.args[0], str) else ""
+    return re.search(r": <Response \[404\]>\.", msg) is not None
 
 
 def deprecateSettings():
@@ -48,7 +60,7 @@ def deprecateSettings():
                             removal = True
                     except Exception as inst:
                         print(type(inst))
-                        if "[404]" in inst.args[0]:
+                        if is_not_found(inst):
                             print(f"\t\t\tNOT FOUND - will be removed")
                             removal = True                        
                 else:
