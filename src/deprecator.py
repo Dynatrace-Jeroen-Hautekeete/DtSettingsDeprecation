@@ -3,6 +3,11 @@ from datetime import datetime, timedelta, timezone
 import os
 import re
 import sys
+
+MIN_PYTHON = (3, 12)
+if sys.version_info < MIN_PYTHON:
+    sys.exit(f"ERROR: Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or higher is required (running {sys.version.split()[0]})")
+
 from dynatrace import Dynatrace
 from dynatrace import TOO_MANY_REQUESTS_WAIT
 

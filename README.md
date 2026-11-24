@@ -30,6 +30,11 @@ The list is defined in `SUPPORTED_ENTITY_TYPES` in [src/deprecator.py](src/depre
 | `SINCE`    | no       | `200`   | Whole number of days (>= 1) since an entity was last seen after which its settings are considered stale. |
 | `CLEAN`    | no       | `No`    | Set to `1`, `y`, `yes` or `true` (case-insensitive) to actually delete. Anything else is a dry run; unrecognised values print a warning. The mode is printed at the start of the run. |
 
+## Requirements
+
+- Python 3.12 or higher (enforced at startup)
+- `dt` 1.2.2 (see [requirements.txt](requirements.txt))
+
 ## Usage
 
 ```
