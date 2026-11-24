@@ -4,7 +4,7 @@ Removes Dynatrace settings objects that are scoped to individual entities which 
 
 ## How it works
 
-For every settings schema, the script lists all settings objects and, for each object whose scope is an entity (not `environment`):
+For every settings schema, the script first reads the schema's allowed scopes and skips the schema, without listing its objects, when it cannot be scoped to any supported entity type. If the allowed scopes cannot be read, the schema is scanned anyway. It then lists the settings objects and, for each object whose scope is an entity (not `environment`):
 
 1. Takes the entity type from the scope (e.g. `HOST-ABC123` -> `HOST`).
 2. Skips the object if the type is not in `SUPPORTED_ENTITY_TYPES`. Skipped types are listed at the end of the run.
@@ -26,7 +26,7 @@ The list is defined in `SUPPORTED_ENTITY_TYPES` in [src/deprecator.py](src/depre
 | Variable   | Required | Default | Description |
 |------------|----------|---------|-------------|
 | `DT_URL`   | yes      | -       | Dynatrace environment URL. Must start with `https://` (plain `http://` is rejected so the API token is never sent unencrypted). |
-| `DT_TOKEN` | yes      | -       | API token with permission to read and write settings and read entities. |
+| `DT_TOKEN` | yes      | -       | API token with permission to read and write settings, read schemas and read entities. |
 | `SINCE`    | no       | `200`   | Whole number of days (>= 1) since an entity was last seen after which its settings are considered stale. |
 | `CLEAN`    | no       | `No`    | Set to `1`, `y`, `yes` or `true` (case-insensitive) to actually delete. Anything else is a dry run; unrecognised values print a warning. The mode is printed at the start of the run. |
 

@@ -6,6 +6,8 @@ import logging
 import os
 import re
 import sys
+from collections.abc import Callable
+from urllib.parse import quote
 
 MIN_PYTHON = (3, 12)
 if sys.version_info < MIN_PYTHON:
@@ -13,6 +15,7 @@ if sys.version_info < MIN_PYTHON:
 
 from dynatrace import Dynatrace
 from dynatrace import TOO_MANY_REQUESTS_WAIT
+from dynatrace.http_client import HttpClient
 
 log = logging.getLogger("deprecator")
 
@@ -52,6 +55,8 @@ class Config:
 class Stats:
     """Counters for the end-of-run summary."""
 
+    schemas_scanned: int = 0
+    schemas_skipped: int = 0  # schemas that cannot hold settings for a supported entity type
     checked: int = 0  # settings objects scoped to a supported entity type
     flagged: int = 0  # of those, stale or orphaned (would be / are removed)
     deleted: int = 0
@@ -185,8 +190,44 @@ def delete_settings_object(dt_client: Dynatrace, object_id: str, stats: Stats) -
         log.info("DELETED %s", object_id)
 
 
-def deprecate_settings(dt_client: Dynatrace, config: Config) -> Stats:
-    """Scan all settings objects and flag (dry run) or delete those whose entity is stale or gone."""
+AllowedScopesFetcher = Callable[[str], set[str] | None]
+
+
+def make_allowed_scopes_fetcher(http_client: HttpClient) -> AllowedScopesFetcher:
+    """Build a function returning the allowed scopes of a settings schema.
+
+    The dynatrace package has no call for the schema detail endpoint
+    (GET /api/v2/settings/schemas/{schemaId}), which is the only place
+    `allowedScopes` is reported, so it is requested through the client's
+    public HttpClient. The function returns None when the scopes are unknown
+    (request failed, field missing or empty), meaning "do not filter".
+    """
+
+    def fetch(schema_id: str) -> set[str] | None:
+        try:
+            response = http_client.make_request(f"/api/v2/settings/schemas/{quote(schema_id, safe=':')}")
+            scopes = response.json().get("allowedScopes")
+        except Exception as exc:  # bare Exception from the client, see is_entity_stale
+            log.warning("Schema %s: could not read allowed scopes, scanning it anyway (%s)", schema_id, short_error(exc))
+            return None
+        if not scopes:
+            return None
+        return {str(scope).upper() for scope in scopes}
+
+    return fetch
+
+
+def schema_can_hold_supported_scopes(allowed_scopes: set[str] | None) -> bool:
+    """Return False only when the schema is known to allow none of the supported entity types."""
+    return allowed_scopes is None or not allowed_scopes.isdisjoint(SUPPORTED_ENTITY_TYPES)
+
+
+def deprecate_settings(dt_client: Dynatrace, config: Config, fetch_allowed_scopes: AllowedScopesFetcher | None = None) -> Stats:
+    """Scan settings objects and flag (dry run) or delete those whose entity is stale or gone.
+
+    If `fetch_allowed_scopes` is given, schemas that cannot be scoped to any
+    supported entity type are skipped without listing their objects.
+    """
     log.info("Mode: %s", "DELETE (CLEAN enabled)" if config.delete_enabled else "DRY RUN (set CLEAN=Yes to delete)")
     now = datetime.now(timezone.utc)
     stale_after = timedelta(days=config.stale_after_days)
@@ -195,6 +236,12 @@ def deprecate_settings(dt_client: Dynatrace, config: Config) -> Stats:
     stats = Stats()
 
     for schema in dt_client.settings.list_schemas():
+        if fetch_allowed_scopes is not None and not schema_can_hold_supported_scopes(fetch_allowed_scopes(schema.schema_id)):
+            stats.schemas_skipped += 1
+            log.debug("Schema %s: no supported entity scope allowed, skipping", schema.schema_id)
+            continue
+        stats.schemas_scanned += 1
+
         # "value" is not needed and can be large; objects are streamed page by page.
         settings_objects = dt_client.settings.list_objects(schema.schema_id, fields="objectId,scope")
         if len(settings_objects) > 0:
@@ -217,7 +264,9 @@ def deprecate_settings(dt_client: Dynatrace, config: Config) -> Stats:
 
     log.info("Unsupported types/scopes (skipped): %s", sorted(unsupported_types))
     log.info(
-        "Summary: checked=%d flagged=%d deleted=%d failed=%d%s",
+        "Summary: schemas scanned=%d skipped=%d | checked=%d flagged=%d deleted=%d failed=%d%s",
+        stats.schemas_scanned,
+        stats.schemas_skipped,
         stats.checked,
         stats.flagged,
         stats.deleted,
@@ -231,15 +280,15 @@ def main() -> None:
     """Entry point: configure logging, validate the environment, run, set the exit code."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
     config = load_config()
-    dt_client = Dynatrace(
-        config.url,
-        config.token,
-        retries=3,
-        retry_delay_ms=1000,
-        too_many_requests_strategy=TOO_MANY_REQUESTS_WAIT,
-        headers={"X-Dynatrace-Script": "SettingsDeprecator"},
-    )
-    stats = deprecate_settings(dt_client, config)
+    client_options = {
+        "retries": 3,
+        "retry_delay_ms": 1000,
+        "too_many_requests_strategy": TOO_MANY_REQUESTS_WAIT,
+        "headers": {"X-Dynatrace-Script": "SettingsDeprecator"},
+    }
+    dt_client = Dynatrace(config.url, config.token, **client_options)
+    schema_http_client = HttpClient(config.url, config.token, **client_options)
+    stats = deprecate_settings(dt_client, config, make_allowed_scopes_fetcher(schema_http_client))
     if stats.failed:
         sys.exit(1)
 
