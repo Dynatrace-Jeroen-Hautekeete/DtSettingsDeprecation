@@ -242,8 +242,8 @@ def deprecate_settings(dt_client: Dynatrace, config: Config, fetch_allowed_scope
             continue
         stats.schemas_scanned += 1
 
-        # "value" is not needed and can be large; objects are streamed page by page.
-        settings_objects = dt_client.settings.list_objects(schema.schema_id, fields="objectId,scope")
+        # The dt library's SettingsObject requires "value" (raw_element["value"]), so it must be requested.
+        settings_objects = dt_client.settings.list_objects(schema.schema_id, fields="objectId,scope,value")
         if len(settings_objects) > 0:
             log.info("Schema %s: %d objects", schema.schema_id, len(settings_objects))
 
