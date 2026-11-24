@@ -55,8 +55,8 @@ def load_config() -> Config:
     url = (os.getenv("DT_URL") or "").strip()
     if not url:
         errors.append("DT_URL is required, e.g. https://{tenant-id}.live.dynatrace.com")
-    elif not re.match(r"^https?://[^/\s]+", url):
-        errors.append(f"DT_URL must start with http:// or https:// (got {url!r})")
+    elif not re.match(r"^https://[^/\s]+", url, re.IGNORECASE):
+        errors.append(f"DT_URL must start with https:// (got {url!r})")
 
     token = (os.getenv("DT_TOKEN") or "").strip()
     if not token:

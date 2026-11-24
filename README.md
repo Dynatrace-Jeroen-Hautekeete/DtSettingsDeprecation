@@ -25,7 +25,7 @@ The list is defined in `SUPPORTED_ENTITY_TYPES` in [src/deprecator.py](src/depre
 
 | Variable   | Required | Default | Description |
 |------------|----------|---------|-------------|
-| `DT_URL`   | yes      | -       | Dynatrace environment URL. Must start with `http://` or `https://`. |
+| `DT_URL`   | yes      | -       | Dynatrace environment URL. Must start with `https://` (plain `http://` is rejected so the API token is never sent unencrypted). |
 | `DT_TOKEN` | yes      | -       | API token with permission to read and write settings and read entities. |
 | `SINCE`    | no       | `200`   | Whole number of days (>= 1) since an entity was last seen after which its settings are considered stale. |
 | `CLEAN`    | no       | `No`    | Set to `1`, `y`, `yes` or `true` (case-insensitive) to actually delete. Anything else is a dry run; unrecognised values print a warning. The mode is printed at the start of the run. |
