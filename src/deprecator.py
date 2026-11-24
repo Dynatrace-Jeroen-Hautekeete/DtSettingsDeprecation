@@ -4,25 +4,32 @@ import re
 from dynatrace import Dynatrace
 from dynatrace import TOO_MANY_REQUESTS_WAIT
 
-dt_url=os.getenv("DT_URL")
-dt_token=os.getenv("DT_TOKEN")
-since=int(os.getenv("SINCE","200"))
-clean=os.getenv("CLEAN","No")
+DT_URL = os.getenv("DT_URL")
+DT_TOKEN = os.getenv("DT_TOKEN")
+STALE_AFTER_DAYS = int(os.getenv("SINCE", "200"))
+DELETE_ENABLED = os.getenv("CLEAN", "No") in ["1", "Y", "y", "YES", "Yes", "yes", "TRUE", "True", "true"]
 
-dtapi = Dynatrace(dt_url,dt_token, retries=3, retry_delay_ms=1000, too_many_requests_strategy=TOO_MANY_REQUESTS_WAIT,headers={"X-Dynatrace-Script":"SettingsDeprecator"})
+dt_client = Dynatrace(
+    DT_URL,
+    DT_TOKEN,
+    retries=3,
+    retry_delay_ms=1000,
+    too_many_requests_strategy=TOO_MANY_REQUESTS_WAIT,
+    headers={"X-Dynatrace-Script": "SettingsDeprecator"},
+)
 
-suptypes = [ 
-    "HOST", 
-    "HOST_GROUP", 
-    "KUBERNETES_CLUSTER", 
-    "PROCESS_GROUP", 
+SUPPORTED_ENTITY_TYPES = [
+    "HOST",
+    "HOST_GROUP",
+    "KUBERNETES_CLUSTER",
+    "PROCESS_GROUP",
     "PROCESS_GROUP_INSTANCE",
     "SERVICE",
     "CLOUD_APPLICATION",
     "CLOUD_APPLICATION_NAMESPACE",
-    "DISK"
+    "DISK",
 ]
-unsuptypes = set()
+unsupported_types = set()
 
 
 def is_not_found(exc: Exception) -> bool:
@@ -36,43 +43,40 @@ def is_not_found(exc: Exception) -> bool:
     return re.search(r": <Response \[404\]>\.", msg) is not None
 
 
-def deprecateSettings():
-    current_dateTime = datetime.now(timezone.utc)
-    deprecation=timedelta(days=since)
-    schemas = dtapi.settings.list_schemas()
+def deprecate_settings():
+    now = datetime.now(timezone.utc)
+    stale_after = timedelta(days=STALE_AFTER_DAYS)
+    schemas = dt_client.settings.list_schemas()
     for schema in schemas:
-        settingsobjects = dtapi.settings.list_objects(schema.schema_id,fields="objectId,value,scope")
-        if len(settingsobjects)>0:
-            print(f"Found schema: {schema.schema_id} : {len(settingsobjects)}")
-        
-        for sobject in settingsobjects:
-            if sobject.scope != "environment":
-                curtype = sobject.scope.split("-")[0]
-                removal = False
-                if curtype in suptypes:
-                    print(f"\tScope: {sobject.scope}")
+        settings_objects = dt_client.settings.list_objects(schema.schema_id, fields="objectId,value,scope")
+        if len(settings_objects) > 0:
+            print(f"Found schema: {schema.schema_id} : {len(settings_objects)}")
+
+        for settings_object in settings_objects:
+            if settings_object.scope != "environment":
+                entity_type = settings_object.scope.split("-")[0]
+                should_remove = False
+                if entity_type in SUPPORTED_ENTITY_TYPES:
+                    print(f"\tScope: {settings_object.scope}")
                     try:
-                        scopedentity = dtapi.entities.get(sobject.scope, fields="lastSeenTms")
-                        print(f"\t\tEntity: {scopedentity.display_name} : {scopedentity.last_seen}")
-                        
-                        if (scopedentity.last_seen + deprecation) < current_dateTime:
-                            print(f"\t\t\tTOO OLD - will be removed")
-                            removal = True
-                    except Exception as inst:
-                        print(type(inst))
-                        if is_not_found(inst):
-                            print(f"\t\t\tNOT FOUND - will be removed")
-                            removal = True                        
+                        scoped_entity = dt_client.entities.get(settings_object.scope, fields="lastSeenTms")
+                        print(f"\t\tEntity: {scoped_entity.display_name} : {scoped_entity.last_seen}")
+
+                        if (scoped_entity.last_seen + stale_after) < now:
+                            print("\t\t\tTOO OLD - will be removed")
+                            should_remove = True
+                    except Exception as exc:
+                        print(type(exc))
+                        if is_not_found(exc):
+                            print("\t\t\tNOT FOUND - will be removed")
+                            should_remove = True
                 else:
-                    unsuptypes.add(curtype)
-                if removal and clean in ["1","Y","y","YES","Yes","yes","TRUE","True","true"]:
-                    dtapi.settings.delete_object(sobject.object_id)
-    
-    print(f"Unsupported types: {unsuptypes}")        
-        
-    
+                    unsupported_types.add(entity_type)
+                if should_remove and DELETE_ENABLED:
+                    dt_client.settings.delete_object(settings_object.object_id)
+
+    print(f"Unsupported types: {unsupported_types}")
+
 
 if __name__ == "__main__":
-    deprecateSettings()
-
-
+    deprecate_settings()
