@@ -110,7 +110,10 @@ def is_entity_stale(dt_client: Dynatrace, scope: str, now: datetime, stale_after
     try:
         entity = dt_client.entities.get(scope, fields="lastSeenTms")
         print(f"\t\tEntity: {entity.display_name} : {entity.last_seen}")
-        if (entity.last_seen + stale_after) < now:
+        if entity.last_seen is None:
+            # The entity exists but reports no last-seen time: never guess, keep the settings.
+            print("\t\t\tNO LAST SEEN TIME - keeping")
+        elif (entity.last_seen + stale_after) < now:
             print("\t\t\tTOO OLD - will be removed")
             stale = True
     except Exception as exc:
@@ -124,12 +127,33 @@ def is_entity_stale(dt_client: Dynatrace, scope: str, now: datetime, stale_after
     return stale
 
 
-def deprecate_settings(dt_client: Dynatrace, config: Config):
+@dataclass
+class Stats:
+    checked: int = 0  # settings objects scoped to a supported entity type
+    flagged: int = 0  # of those, stale or orphaned (would be / are removed)
+    deleted: int = 0
+    failed: int = 0
+
+
+def delete_settings_object(dt_client: Dynatrace, object_id: str, stats: Stats):
+    """Delete one settings object; log and count a failure instead of aborting the run."""
+    try:
+        dt_client.settings.delete_object(object_id)
+    except Exception as exc:
+        stats.failed += 1
+        print(f"\t\t\tDELETE FAILED for {object_id}: {exc}")
+    else:
+        stats.deleted += 1
+        print(f"\t\t\tDELETED {object_id}")
+
+
+def deprecate_settings(dt_client: Dynatrace, config: Config) -> Stats:
     print("Mode: DELETE (CLEAN enabled)" if config.delete_enabled else "Mode: DRY RUN (set CLEAN=Yes to delete)")
     now = datetime.now(timezone.utc)
     stale_after = timedelta(days=config.stale_after_days)
     entity_cache = {}  # scope -> should the settings be removed
     unsupported_types = set()
+    stats = Stats()
     schemas = dt_client.settings.list_schemas()
     for schema in schemas:
         # "value" is not needed and can be large; objects are streamed page by page.
@@ -147,10 +171,19 @@ def deprecate_settings(dt_client: Dynatrace, config: Config):
                 continue
 
             print(f"\tScope: {settings_object.scope}")
-            if is_entity_stale(dt_client, settings_object.scope, now, stale_after, entity_cache) and config.delete_enabled:
-                dt_client.settings.delete_object(settings_object.object_id)
+            stats.checked += 1
+            if is_entity_stale(dt_client, settings_object.scope, now, stale_after, entity_cache):
+                stats.flagged += 1
+                if config.delete_enabled:
+                    delete_settings_object(dt_client, settings_object.object_id, stats)
 
     print(f"Unsupported types: {unsupported_types}")
+    print(
+        f"Summary: checked={stats.checked} flagged={stats.flagged} "
+        f"deleted={stats.deleted} failed={stats.failed}"
+        + ("" if config.delete_enabled else " (dry run, nothing deleted)")
+    )
+    return stats
 
 
 def main():
@@ -163,7 +196,9 @@ def main():
         too_many_requests_strategy=TOO_MANY_REQUESTS_WAIT,
         headers={"X-Dynatrace-Script": "SettingsDeprecator"},
     )
-    deprecate_settings(dt_client, config)
+    stats = deprecate_settings(dt_client, config)
+    if stats.failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

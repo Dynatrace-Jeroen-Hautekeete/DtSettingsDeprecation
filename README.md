@@ -49,6 +49,8 @@ CLEAN=Yes python src/deprecator.py
 
 Invalid or missing `DT_URL`, `DT_TOKEN` or `SINCE` are all reported up front and the script exits with code 2 before contacting Dynatrace.
 
+Each run ends with a summary line (`checked`, `flagged`, `deleted`, `failed`). A failed delete is logged and the run continues; the script then exits with code 1. Entities that exist but report no last-seen time are always kept.
+
 On PowerShell use `$env:CLEAN = "Yes"` before running.
 
 Review the dry-run output before enabling `CLEAN`; deletions cannot be undone.
